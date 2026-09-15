@@ -1,6 +1,10 @@
 from django.db import models
 from .document_model import Document
 
+# Represents a research process focused on answering a specific question.
+# A research coordinates the collection and analysis of relevant documents
+# and tracks the overall state of the research pipeline.
+
 class Research(models.Model):
 
     question = models.TextField()
