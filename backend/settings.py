@@ -20,6 +20,9 @@ ALLOWED_HOSTS = env.list(
 
 REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
 
+#OPEN_AI API KEY
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+
 # APPLICATIONS
 INSTALLED_APPS = [
     # Django
