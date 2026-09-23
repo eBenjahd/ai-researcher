@@ -20,6 +20,8 @@ ALLOWED_HOSTS = env.list(
 
 REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")
 
+SEARXNG_URL = env("SEARXNG_URL", default="http://localhost:8888")
+
 # APPLICATIONS
 INSTALLED_APPS = [
     # Django
