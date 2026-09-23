@@ -1,14 +1,13 @@
 from django.conf import settings
-from openai import OpenAI
 
-client = OpenAI(api_key=settings.OPENAI_API_KEY)
+from .providers.openai import OpenAIService
+
+
+openai_service = OpenAIService(
+    api_key=settings.OPENAI_API_KEY,
+    model="text-embedding-3-small",
+)
 
 
 def generate_embedding(text: str) -> list[float]:
-
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text,
-    )
-
-    return response.data[0].embedding
+    return openai_service.generate_embedding(text)
