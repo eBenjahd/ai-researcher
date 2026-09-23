@@ -12,5 +12,24 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  searxng:
+
+    image: searxng/searxng:latest
+    container_name: youtube_searxng
+    restart: unless-stopped
+
+    ports:
+      - "8888:8080"
+
+    volumes:
+      - ./searxng:/etc/searxng
+
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+      - SEARXNG_SECRET=2fbdd897a3900e5328d943c4115f4bc6d1c652c4943e16bb499d6e58a876eca8
+
+    depends_on:
+      - db
+
 volumes:
   postgres_data:
