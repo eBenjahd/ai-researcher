@@ -1,4 +1,4 @@
-import json
+from typesafe_sdk import Noul
 
 from .searxng import SearXNGService
 from .clear_search import clean_search_results
@@ -10,10 +10,10 @@ class RelevanceService:
         self.provider = provider
         self.search_service = SearXNGService()
 
-    def select_relevant_documents(self, query):
+    async def select_relevant_documents(self, query):
 
         # 1. Buscar en SearXNG
-        search_data = self.search_service.search(query)
+        search_data = await self.search_service.search(query)
 
         # 2. Limpiar resultados
         cleaned_data = clean_search_results(search_data)
@@ -21,97 +21,113 @@ class RelevanceService:
         problem_to_solve = cleaned_data["problem_to_solve"]
         results = cleaned_data["results"]
 
-        # 3. Convertir los documentos a texto para el prompt
-        documents = json.dumps(
-            results,
-            ensure_ascii=False,
+        if not results:
+            return []
+
+        # 3. Crear una pregunta JEV por documento
+        questions = {
+            f"document_{result['id']}": Noul(
+                instructions=(
+                    "You are an expert research assistant specializing "
+                    "in preliminary source filtering.\n"
+
+                    "Evaluate how relevant this document could be to the "
+                    "research question, using ONLY the research question, "
+                    "document title, and URL.\n"
+
+                    "Consider how directly the document appears to address "
+                    "the research question, how specific its topic is, and "
+                    "whether it could reasonably provide useful information "
+                    "for the investigation.\n"
+
+                    "Use this relevance scale:\n"
+                    "0.90 - 1.00: Extremely relevant. The document appears "
+                    "to directly address the specific research question.\n\n"
+                    "0.70 - 0.89: Highly relevant. The document clearly "
+                    "relates to the question but may be broader or more indirect.\n\n"
+                    "0.40 - 0.69: Potentially relevant. The document relates "
+                    "to the general topic but may provide limited value.\n\n"
+                    "0.00 - 0.39: Low relevance. The document appears "
+                    "unlikely to contribute useful information.\n\n"
+                    "Do not evaluate source quality, credibility, or truthfulness. "
+                    "Do not favor or penalize a source because of its type, "
+                    "authority, or publication platform.\n\n"
+                    "Do not penalize information for supporting, challenging, "
+                    "or contradicting a possible conclusion. Different "
+                    "perspectives can all be relevant to the investigation.\n\n"
+                    "Do not assume information about the document's actual "
+                    "contents beyond what can reasonably be inferred from "
+                    "its title and URL."
+                )
+            )
+            for result in results
+        }
+
+        # 4. Enviar pregunta + documentos a JEV
+        response = await self.provider.evaluate(
+            state={
+                "research_question": problem_to_solve,
+                "documents": results,
+            },
+            questions=questions,
         )
 
-        prompt = f"""
-Eres un clasificador de relevancia para un pipeline de investigación automatizado.
-No eres un asistente conversacional: tu única salida válida es un objeto JSON.
+        # 5. Extraer scores
+        scores = {
+            int(key.removeprefix("document_")): answer.noul
+            for key, answer in response.nouls.items()
+        }
 
-PREGUNTA DE INVESTIGACIÓN:
-{problem_to_solve}
+        # # TEMPORAL: mostrar scores
+        # print("\nJEV SCORES:")
+        # for document_id, score in sorted(
+        #     scores.items(),
+        #     key=lambda item: item[1],
+        #     reverse=True,
+        # ):
+        #     document = next(
+        #         (
+        #             result
+        #             for result in results
+        #             if result["id"] == document_id
+        #         ),
+        #         None,
+        #     )
 
-DOCUMENTOS (id, title, url):
-{documents}
+        #     if document:
+        #         print(
+        #             f"{score:.3f} | "
+        #             f"{document['title']}"
+        #         )
 
-TAREA:
-Selecciona hasta 5 ids de documentos cuyo title y url indiquen relación directa y
-específica con la pregunta de investigación. Evalúa solo title y url — nunca asumas
-contenido no mostrado.
+        # 6. Ordenar documentos por relevancia
+        ranked_ids = [
+            document_id
+            for document_id, score in sorted(
+                scores.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
 
-CRITERIOS DE SELECCIÓN (en orden de peso):
-1. El title contiene términos o conceptos que responden directamente la pregunta.
-2. El title es específico al tema, no genérico ni ambiguo.
-3. Coincidencia temporal/geográfica si la pregunta la exige explícitamente. Si el
-   title o la url contienen una fecha o año explícito, verifica que esté dentro del
-   rango temporal de la pregunta y priorízalo si coincide.
-4. El domain sugiere naturaleza técnica/académica/institucional/periodística
-   (señal secundaria, nunca decisiva por sí sola).
+        # 7. Quedarnos con los 10 primeros
+        top_ids = ranked_ids[:10]
 
-PRIORIDAD DE TIPO DE FUENTE (cuando el title/url lo permita inferir):
-1. Fuente primaria/oficial: bancos centrales, organismos internacionales, reguladores,
-   instituciones directamente involucradas en el tema.
-2. Análisis institucional/think tank especializado.
-3. Trabajo académico (tesis, TFG, paper universitario) — válido pero secundario.
-4. Prensa/blog especializado.
-
-EXCLUYE si:
-- El title es ambiguo y no permite inferir relación con el tema.
-- El title sugiere contenido promocional, listado genérico o clickbait sin relación clara.
-- No hay suficiente información para juzgar relevancia (en ese caso, no lo incluyas).
-
-No determines si la información del documento es verdadera.
-No determines si la fuente es confiable en términos absolutos.
-No inventes información sobre el contenido de los documentos.
-No descartes una fuente únicamente porque no conozcas el sitio web.
-No utilices conocimiento externo para asumir qué contiene un documento más allá de
-lo que title y url permiten inferir razonablemente.
-
-Si menos de 5 documentos cumplen los criterios, devuelve solo los que cumplen.
-Si ninguno cumple, devuelve un array vacío.
-
-FORMATO DE SALIDA (obligatorio):
-Devuelve un objeto JSON con la forma {{"ids": [...]}}.
-Conteniendo únicamente los ids seleccionados como enteros.
-Sin texto adicional, sin explicación, sin markdown.
-Máximo 5 ids.
-"""
-
-        response = self.provider.generate_response(
-            prompt=prompt,
-        )
-
-        relevance_data = json.loads(response)
-
-        ids = relevance_data["ids"]
-
-        results_matched = self.match_relevant_documents(
-            ids=ids,
+        # 8. Recuperar los documentos originales
+        return self.match_relevant_documents(
+            ids=top_ids,
             results=results,
         )
 
-        return results_matched
-
-    
     def match_relevant_documents(self, ids, results):
 
-        results_matched = []
+        results_by_id = {
+            result["id"]: result
+            for result in results
+        }
 
-        for index in ids:
-
-            result = next(
-                (
-                    result
-                    for result in results
-                    if result["id"] == index
-                ),
-                None,
-            )
-
-            if result:
-                results_matched.append(result)
-
-        return results_matched
+        return [
+            results_by_id[index]
+            for index in ids
+            if index in results_by_id
+        ]
