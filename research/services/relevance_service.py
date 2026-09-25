@@ -21,6 +21,9 @@ class RelevanceService:
         problem_to_solve = cleaned_data["problem_to_solve"]
         results = cleaned_data["results"]
 
+        if not results:
+            return []
+
         # 3. Crear una pregunta JEV por documento
         questions = {
             f"document_{result['id']}": Noul(
@@ -107,8 +110,8 @@ class RelevanceService:
             )
         ]
 
-        # 7. Quedarnos con los 5 primeros
-        top_ids = ranked_ids[:5]
+        # 7. Quedarnos con los 10 primeros
+        top_ids = ranked_ids[:10]
 
         # 8. Recuperar los documentos originales
         return self.match_relevant_documents(

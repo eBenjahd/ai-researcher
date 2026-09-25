@@ -1,1 +1,2 @@
 from .web_search_service import WebPageService
+from .html_extractor import HTMLExtractionService

@@ -5,7 +5,8 @@ from .views import (
     DocumentViewSet, 
     TopicViewSet, 
     ClaimViewSet,
-    ResearchViewSet
+    ResearchViewSet,
+    ResearchView,
 )
 
 
@@ -16,4 +17,5 @@ router.register("topics", TopicViewSet, basename="topic")
 router.register("claims", ClaimViewSet, basename="claim")
 router.register("researchs", ResearchViewSet, basename="research")
 
-urlpatterns = router.urls
+urlpatterns = [path("research/run/", ResearchView.as_view(), name="research-run")]
+urlpatterns += router.urls
