@@ -24,6 +24,13 @@ class ResearchView(APIView):
             research_service.run(query)
         )
 
+        if isinstance(result, list):
+
+            return Response({
+                "query": query,
+                "results": result,
+            })
+
         return Response({
             "query": query,
             **result,
